@@ -1,0 +1,7 @@
+pyinstaller==6.22.0
+numpy==2.5.2
+sherpa-onnx==1.13.4
+fastapi==0.141.1
+uvicorn[standard]==0.52.1
+pydantic==2.13.4
+websockets==17.0.1

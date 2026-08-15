@@ -1,0 +1,6 @@
+/assets
+/build
+/dist
+/__pycache__
+/tests/__pycache__
+*.pyc
