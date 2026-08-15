@@ -383,7 +383,14 @@ def main() -> int:
         probe.destroy()
         recognizer = create_reazon_recognizer(assets_dir(), "int8", 1)
         del recognizer
-        BrowserTranslator("mt2").validate_assets()
+        translator = BrowserTranslator("mt2")
+        translator.validate_assets()
+        # In a windowed PyInstaller build stdout/stderr are None. Constructing
+        # the embedded server config here protects the frozen-only path that
+        # previously crashed inside Uvicorn's color formatter.
+        config = translator._uvicorn_config()
+        if config.log_config is not None:
+            raise RuntimeError("Uvicorn console logging must be disabled in the GUI EXE.")
         return 0
     app = ReazonSubtitleApp()
     app.mainloop()

@@ -287,13 +287,7 @@ class BrowserTranslator:
     def start(self) -> None:
         self.validate_assets()
         self._set_state("HyTrans 로컬 서버를 시작하고 있습니다.")
-        config = uvicorn.Config(
-            self._app,
-            host="127.0.0.1",
-            port=self.port,
-            log_level="error",
-            access_log=False,
-        )
+        config = self._uvicorn_config()
         self._server = uvicorn.Server(config)
         self._server_thread = threading.Thread(
             target=self._server.run,
@@ -336,6 +330,26 @@ class BrowserTranslator:
             creationflags=_creation_flags(),
         )
         self._browser_started_at = time.monotonic()
+
+    def _uvicorn_config(self) -> uvicorn.Config:
+        """Create a server config that is safe in a windowed PyInstaller EXE.
+
+        A ``console=False`` executable intentionally has no stdout/stderr.
+        Uvicorn's default color formatter probes ``sys.stderr.isatty()`` while
+        Config is constructed and crashes before the local translation server
+        starts. The app does not need console logging, so disable that logging
+        dictionary entirely instead of attaching a dummy global stream.
+        """
+
+        return uvicorn.Config(
+            self._app,
+            host="127.0.0.1",
+            port=self.port,
+            log_level="error",
+            access_log=False,
+            log_config=None,
+            use_colors=False,
+        )
 
     def wait_ready(
         self,

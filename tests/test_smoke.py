@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 import wave
 from pathlib import Path
+from unittest import mock
 
 import numpy as np
 
@@ -16,6 +18,16 @@ from translator_service import BrowserTranslator
 
 
 class LocalAssetSmokeTests(unittest.TestCase):
+    def test_uvicorn_config_is_safe_without_console_streams(self) -> None:
+        translator = BrowserTranslator("mt2")
+        with (
+            mock.patch.object(sys, "stdout", None),
+            mock.patch.object(sys, "stderr", None),
+        ):
+            config = translator._uvicorn_config()
+        self.assertIsNone(config.log_config)
+        self.assertFalse(config.access_log)
+
     def test_delayed_audio_pts_is_preserved_as_leading_silence(self) -> None:
         root = assets_dir()
         ffmpeg = root / "ffmpeg" / "ffmpeg.exe"
