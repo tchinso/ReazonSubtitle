@@ -19,11 +19,11 @@ SAMPLE_RATE = 16_000
 FAST_VAD: dict[str, float] = {
     "threshold": 0.50,
     "min_speech_duration": 0.20,
-    "min_silence_duration": 0.55,
+    "min_silence_duration": 0.25,
     "max_segment_duration": 20.0,
     "pre_padding": 0.15,
     "post_padding": 0.35,
-    "merge_gap": 0.50,
+    "merge_gap": 0.15,
     "merge_short_under": 0.80,
     "forced_cut_overlap": 0.40,
 }

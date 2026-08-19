@@ -126,7 +126,7 @@ class ReazonSubtitleApp(tk.Tk):
         ttk.Label(
             options,
             text=(
-                "VAD는 MekiAudioCapture FAST 기준 고정: silence 0.55초 · 최대 20초 · "
+                "VAD는 MekiAudioCapture FAST 기준 고정: silence 0.25초 · 최대 20초 · "
                 "앞/뒤 여백 0.15/0.35초"
             ),
             style="Hint.TLabel",
