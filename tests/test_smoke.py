@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import types
 import unittest
 import wave
 from pathlib import Path
@@ -12,13 +13,71 @@ from unittest import mock
 
 import numpy as np
 
-from audio_pipeline import extract_original_audio, probe_media
+from audio_pipeline import (
+    DEFAULT_STT_MODEL,
+    PARAKEET_MODEL_DIRECTORY,
+    STT_MODELS,
+    create_stt_recognizer,
+    extract_original_audio,
+    probe_media,
+)
 from resource_paths import assets_dir
 from subtitle_processor import process_video
 from translator_service import BrowserTranslator, MODELS
 
 
 class LocalAssetSmokeTests(unittest.TestCase):
+    def test_parakeet_is_the_default_stt_model_and_reazonspeech_remains_selectable(self) -> None:
+        self.assertEqual(DEFAULT_STT_MODEL, "parakeet")
+        self.assertIn(DEFAULT_STT_MODEL, STT_MODELS)
+        self.assertIn("reazonspeech", STT_MODELS)
+        self.assertEqual(
+            inspect.signature(process_video).parameters["stt_model"].default,
+            DEFAULT_STT_MODEL,
+        )
+
+    def test_stt_recognizer_factory_uses_the_model_specific_sherpa_api(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            parakeet = root / PARAKEET_MODEL_DIRECTORY
+            parakeet.mkdir()
+            (parakeet / "model.int8.onnx").touch()
+            (parakeet / "tokens.txt").write_text("<blk> 0\n", encoding="utf-8")
+
+            reazon = root / "reazonspeech-ja"
+            reazon.mkdir()
+            (reazon / "tokens.txt").write_text("<blk> 0\n", encoding="utf-8")
+            for name in (
+                "encoder-epoch-99-avg-1.int8.onnx",
+                "decoder-epoch-99-avg-1.onnx",
+                "joiner-epoch-99-avg-1.int8.onnx",
+            ):
+                (reazon / name).touch()
+
+            offline_recognizer = types.SimpleNamespace(
+                from_nemo_ctc=mock.Mock(return_value="parakeet-recognizer"),
+                from_transducer=mock.Mock(return_value="reazon-recognizer"),
+            )
+            fake_sherpa = types.SimpleNamespace(OfflineRecognizer=offline_recognizer)
+            with mock.patch.dict(sys.modules, {"sherpa_onnx": fake_sherpa}):
+                self.assertEqual(create_stt_recognizer(root), "parakeet-recognizer")
+                self.assertEqual(
+                    create_stt_recognizer(root, "reazonspeech"),
+                    "reazon-recognizer",
+                )
+
+            parakeet_call = offline_recognizer.from_nemo_ctc.call_args.kwargs
+            self.assertEqual(parakeet_call["model"], str(parakeet / "model.int8.onnx"))
+            self.assertEqual(parakeet_call["tokens"], str(parakeet / "tokens.txt"))
+            self.assertEqual(parakeet_call["sample_rate"], 16_000)
+            self.assertEqual(parakeet_call["feature_dim"], 80)
+            self.assertEqual(parakeet_call["decoding_method"], "greedy_search")
+            self.assertEqual(parakeet_call["provider"], "cpu")
+            self.assertEqual(
+                offline_recognizer.from_transducer.call_args.kwargs["encoder"],
+                str(reazon / "encoder-epoch-99-avg-1.int8.onnx"),
+            )
+
     def test_mt15_is_the_default_translation_model(self) -> None:
         self.assertEqual(BrowserTranslator().model.key, "mt1.5")
         self.assertEqual(

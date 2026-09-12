@@ -10,7 +10,12 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-from audio_pipeline import CancelledError
+from audio_pipeline import (
+    DEFAULT_STT_MODEL,
+    STT_MODELS,
+    CancelledError,
+    get_stt_model,
+)
 from subtitle_processor import ProcessSummary, process_video
 from translator_service import MODELS
 
@@ -51,6 +56,7 @@ class ReazonSubtitleApp(tk.Tk):
         self.input_var = tk.StringVar()
         self.output_var = tk.StringVar()
         self.precision_var = tk.StringVar(value="int8")
+        self.stt_model_var = tk.StringVar(value=STT_MODELS[DEFAULT_STT_MODEL].label)
         self.model_var = tk.StringVar(value=MODELS["mt1.5"].label)
         self.status_var = tk.StringVar(value="영상을 선택해 주세요.")
         self.progress_var = tk.DoubleVar(value=0.0)
@@ -81,7 +87,7 @@ class ReazonSubtitleApp(tk.Tk):
         )
         ttk.Label(
             outer,
-            text="영상의 원본 오디오 → FAST VAD → Reazon 일본어 인식 → HyTrans 한국어 SRT",
+            text="영상의 원본 오디오 → FAST VAD → 일본어 STT → HyTrans 한국어 SRT",
             style="Hint.TLabel",
         ).grid(row=1, column=0, sticky=tk.W, pady=(3, 18))
 
@@ -107,7 +113,18 @@ class ReazonSubtitleApp(tk.Tk):
         options.columnconfigure(1, weight=1)
         options.columnconfigure(3, weight=1)
 
-        ttk.Label(options, text="Reazon 정밀도").grid(row=0, column=0, sticky=tk.W)
+        ttk.Label(options, text="일본어 STT 모델").grid(row=0, column=0, sticky=tk.W)
+        self.stt_model_combo = ttk.Combobox(
+            options,
+            textvariable=self.stt_model_var,
+            values=tuple(model.label for model in STT_MODELS.values()),
+            state="readonly",
+            width=36,
+        )
+        self.stt_model_combo.grid(row=0, column=1, sticky=tk.W, padx=(10, 24))
+        self.stt_model_combo.bind("<<ComboboxSelected>>", self._on_stt_model_changed)
+
+        ttk.Label(options, text="Reazon 정밀도").grid(row=0, column=2, sticky=tk.W)
         self.precision_combo = ttk.Combobox(
             options,
             textvariable=self.precision_var,
@@ -115,9 +132,9 @@ class ReazonSubtitleApp(tk.Tk):
             state="readonly",
             width=12,
         )
-        self.precision_combo.grid(row=0, column=1, sticky=tk.W, padx=(10, 24))
+        self.precision_combo.grid(row=0, column=3, sticky=tk.W, padx=(10, 0))
 
-        ttk.Label(options, text="번역 모델").grid(row=0, column=2, sticky=tk.W)
+        ttk.Label(options, text="번역 모델").grid(row=1, column=0, sticky=tk.W, pady=(10, 0))
         self.model_combo = ttk.Combobox(
             options,
             textvariable=self.model_var,
@@ -125,7 +142,14 @@ class ReazonSubtitleApp(tk.Tk):
             state="readonly",
             width=27,
         )
-        self.model_combo.grid(row=0, column=3, sticky=tk.W, padx=(10, 0))
+        self.model_combo.grid(
+            row=1,
+            column=1,
+            columnspan=3,
+            sticky=tk.W,
+            padx=(10, 0),
+            pady=(10, 0),
+        )
 
         ttk.Label(
             options,
@@ -134,7 +158,9 @@ class ReazonSubtitleApp(tk.Tk):
                 "앞/뒤 여백 0.15/0.35초"
             ),
             style="Hint.TLabel",
-        ).grid(row=1, column=0, columnspan=4, sticky=tk.W, pady=(10, 0))
+        ).grid(row=2, column=0, columnspan=4, sticky=tk.W, pady=(10, 0))
+
+        self._on_stt_model_changed()
 
         progress_frame = ttk.Frame(outer)
         progress_frame.grid(row=4, column=0, sticky=tk.EW, pady=(16, 0))
@@ -213,6 +239,18 @@ class ReazonSubtitleApp(tk.Tk):
             self.output_var.set(selected)
             self._output_was_edited = True
 
+    def _selected_stt_key(self) -> str:
+        label_to_key = {model.label: key for key, model in STT_MODELS.items()}
+        return label_to_key.get(self.stt_model_var.get(), DEFAULT_STT_MODEL)
+
+    def _on_stt_model_changed(self, _event=None) -> None:
+        model = get_stt_model(self._selected_stt_key())
+        if model.supports_fp32:
+            self.precision_combo.configure(state="readonly")
+        else:
+            self.precision_var.set("int8")
+            self.precision_combo.configure(state=tk.DISABLED)
+
     def _set_running(self, running: bool) -> None:
         field_state = tk.DISABLED if running else tk.NORMAL
         combo_state = tk.DISABLED if running else "readonly"
@@ -223,8 +261,11 @@ class ReazonSubtitleApp(tk.Tk):
             self.browse_output,
         ):
             widget.configure(state=field_state)
-        self.precision_combo.configure(state=combo_state)
+        self.stt_model_combo.configure(state=combo_state)
+        self.precision_combo.configure(state=tk.DISABLED if running else "readonly")
         self.model_combo.configure(state=combo_state)
+        if not running:
+            self._on_stt_model_changed()
         self.start_button.configure(state=tk.DISABLED if running else tk.NORMAL)
         self.cancel_button.configure(state=tk.NORMAL if running else tk.DISABLED)
 
@@ -251,8 +292,9 @@ class ReazonSubtitleApp(tk.Tk):
         ):
             return
 
-        label_to_key = {model.label: key for key, model in MODELS.items()}
-        model_key = label_to_key.get(self.model_var.get(), "mt1.5")
+        translation_label_to_key = {model.label: key for key, model in MODELS.items()}
+        translation_model_key = translation_label_to_key.get(self.model_var.get(), "mt1.5")
+        stt_model_key = self._selected_stt_key()
         self._cancel_event.clear()
         self._set_running(True)
         self.open_folder_button.configure(state=tk.DISABLED)
@@ -264,19 +306,33 @@ class ReazonSubtitleApp(tk.Tk):
 
         self._worker = threading.Thread(
             target=self._run_job,
-            args=(Path(input_text), output, self.precision_var.get(), model_key),
+            args=(
+                Path(input_text),
+                output,
+                stt_model_key,
+                self.precision_var.get(),
+                translation_model_key,
+            ),
             name="ReazonSubtitle-Job",
             daemon=False,
         )
         self._worker.start()
 
-    def _run_job(self, input_path: Path, output_path: Path, precision: str, model: str) -> None:
+    def _run_job(
+        self,
+        input_path: Path,
+        output_path: Path,
+        stt_model: str,
+        precision: str,
+        translation_model: str,
+    ) -> None:
         try:
             summary = process_video(
                 input_path,
                 output_path,
                 precision=precision,
-                translation_model=model,
+                stt_model=stt_model,
+                translation_model=translation_model,
                 status=lambda ratio, message: self._events.put(("status", ratio, message)),
                 log=lambda text: self._events.put(("log", text)),
                 cancel_event=self._cancel_event,
@@ -377,7 +433,7 @@ class ReazonSubtitleApp(tk.Tk):
 def main() -> int:
     configure_windows_process()
     if "--self-test" in sys.argv[1:]:
-        from audio_pipeline import create_reazon_recognizer
+        from audio_pipeline import create_stt_recognizer
         from resource_paths import assets_dir
         from translator_service import BrowserTranslator
 
@@ -385,7 +441,14 @@ def main() -> int:
         probe.withdraw()
         probe.update_idletasks()
         probe.destroy()
-        recognizer = create_reazon_recognizer(assets_dir(), "int8", 1)
+        recognizer = create_stt_recognizer(assets_dir(), num_threads=1)
+        del recognizer
+        recognizer = create_stt_recognizer(
+            assets_dir(),
+            "reazonspeech",
+            "int8",
+            1,
+        )
         del recognizer
         translator = BrowserTranslator()
         translator.validate_assets()

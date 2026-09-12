@@ -16,6 +16,42 @@ import numpy as np
 
 SAMPLE_RATE = 16_000
 
+
+@dataclass(frozen=True)
+class SttModel:
+    key: str
+    label: str
+    status_name: str
+    asset_directory: str
+    architecture: str
+    supports_fp32: bool
+
+
+PARAKEET_MODEL_DIRECTORY = (
+    "sherpa-onnx-nemo-parakeet-tdt_ctc-0.6b-ja-35000-int8"
+)
+
+STT_MODELS: dict[str, SttModel] = {
+    "parakeet": SttModel(
+        key="parakeet",
+        label="Parakeet TDT-CTC 0.6B 일본어 (기본, INT8)",
+        status_name="Parakeet TDT-CTC",
+        asset_directory=PARAKEET_MODEL_DIRECTORY,
+        architecture="nemo_ctc",
+        supports_fp32=False,
+    ),
+    "reazonspeech": SttModel(
+        key="reazonspeech",
+        label="ReazonSpeech 일본어 (INT8 / FP32)",
+        status_name="ReazonSpeech",
+        asset_directory="reazonspeech-ja",
+        architecture="transducer",
+        supports_fp32=True,
+    ),
+}
+
+DEFAULT_STT_MODEL = "parakeet"
+
 FAST_VAD: dict[str, float] = {
     "threshold": 0.50,
     "min_speech_duration": 0.20,
@@ -356,27 +392,27 @@ def build_fast_segments(
     return output
 
 
-def _validate_tokens(tokens_path: Path) -> None:
+def _validate_tokens(tokens_path: Path, model_name: str) -> None:
     seen: set[int] = set()
     for line_number, line in enumerate(
         tokens_path.read_text(encoding="utf-8-sig").splitlines(), 1
     ):
         fields = line.rsplit(maxsplit=1)
         if len(fields) != 2:
-            raise ValueError(f"Reazon 토큰 파일 {line_number}행의 형식이 잘못되었습니다.")
+            raise ValueError(f"{model_name} 토큰 파일 {line_number}행의 형식이 잘못되었습니다.")
         try:
             token_id = int(fields[1])
         except ValueError as exc:
-            raise ValueError(f"Reazon 토큰 파일 {line_number}행의 ID가 잘못되었습니다.") from exc
+            raise ValueError(f"{model_name} 토큰 파일 {line_number}행의 ID가 잘못되었습니다.") from exc
         if token_id < 0 or token_id in seen:
-            raise ValueError(f"Reazon 토큰 파일 {line_number}행의 ID가 중복되었습니다.")
+            raise ValueError(f"{model_name} 토큰 파일 {line_number}행의 ID가 중복되었습니다.")
         seen.add(token_id)
     if not seen or seen != set(range(max(seen) + 1)):
-        raise ValueError("Reazon 토큰 파일의 ID가 연속적이지 않습니다.")
+        raise ValueError(f"{model_name} 토큰 파일의 ID가 연속적이지 않습니다.")
 
 
 def reazon_model_paths(asset_root: Path, precision: str = "int8") -> dict[str, Path]:
-    root = asset_root / "reazonspeech-ja"
+    root = asset_root / STT_MODELS["reazonspeech"].asset_directory
     use_int8 = str(precision).lower() == "int8"
     paths = {
         "tokens": root / "tokens.txt",
@@ -398,11 +434,25 @@ def reazon_model_paths(asset_root: Path, precision: str = "int8") -> dict[str, P
     return paths
 
 
+def parakeet_model_paths(asset_root: Path, precision: str = "int8") -> dict[str, Path]:
+    if str(precision).lower() != "int8":
+        raise ValueError("Parakeet TDT-CTC 모델은 INT8 배포본만 지원합니다.")
+    root = asset_root / STT_MODELS["parakeet"].asset_directory
+    paths = {
+        "tokens": root / "tokens.txt",
+        "model": root / "model.int8.onnx",
+    }
+    missing = [path for path in paths.values() if not path.is_file()]
+    if missing:
+        raise FileNotFoundError(f"Parakeet 모델 파일이 없습니다: {missing[0]}")
+    return paths
+
+
 def create_reazon_recognizer(asset_root: Path, precision: str = "int8", num_threads: int = 4):
     import sherpa_onnx
 
     models = reazon_model_paths(asset_root, precision)
-    _validate_tokens(models["tokens"])
+    _validate_tokens(models["tokens"], STT_MODELS["reazonspeech"].status_name)
     return sherpa_onnx.OfflineRecognizer.from_transducer(
         encoder=str(models["encoder"]),
         decoder=str(models["decoder"]),
@@ -415,6 +465,48 @@ def create_reazon_recognizer(asset_root: Path, precision: str = "int8", num_thre
         provider="cpu",
         model_type="",
     )
+
+
+def create_parakeet_recognizer(
+    asset_root: Path,
+    precision: str = "int8",
+    num_threads: int = 4,
+):
+    import sherpa_onnx
+
+    models = parakeet_model_paths(asset_root, precision)
+    _validate_tokens(models["tokens"], STT_MODELS["parakeet"].status_name)
+    return sherpa_onnx.OfflineRecognizer.from_nemo_ctc(
+        model=str(models["model"]),
+        tokens=str(models["tokens"]),
+        num_threads=num_threads,
+        sample_rate=SAMPLE_RATE,
+        feature_dim=80,
+        decoding_method="greedy_search",
+        provider="cpu",
+    )
+
+
+def get_stt_model(model_key: str) -> SttModel:
+    try:
+        return STT_MODELS[model_key]
+    except KeyError as exc:
+        choices = ", ".join(STT_MODELS)
+        raise ValueError(f"알 수 없는 STT 모델입니다: {model_key} (선택 가능: {choices})") from exc
+
+
+def create_stt_recognizer(
+    asset_root: Path,
+    model_key: str = DEFAULT_STT_MODEL,
+    precision: str = "int8",
+    num_threads: int = 4,
+):
+    model = get_stt_model(model_key)
+    if model.architecture == "nemo_ctc":
+        return create_parakeet_recognizer(asset_root, precision, num_threads)
+    if model.architecture == "transducer":
+        return create_reazon_recognizer(asset_root, precision, num_threads)
+    raise ValueError(f"지원하지 않는 STT 모델 형식입니다: {model.architecture}")
 
 
 def _remove_overlap(previous: str, current: str, limit: int = 40) -> str:
@@ -430,6 +522,7 @@ def recognize_segments(
     recognizer,
     segments: Iterable[SpeechSegment],
     *,
+    model_name: str = "STT",
     progress: ProgressCallback | None = None,
     cancel_event=None,
 ) -> list[RecognitionResult]:
@@ -463,7 +556,10 @@ def recognize_segments(
             )
             previous_text = text
         if progress:
-            progress(index / max(1, len(items)), f"Reazon 일본어 인식 중 ({index}/{len(items)})")
+            progress(
+                index / max(1, len(items)),
+                f"{model_name} 일본어 인식 중 ({index}/{len(items)})",
+            )
     return results
 
 

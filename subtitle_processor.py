@@ -12,11 +12,13 @@ import numpy as np
 
 from audio_pipeline import (
     CancelledError,
+    DEFAULT_STT_MODEL,
     SubtitleEntry,
     build_fast_segments,
     collect_vad_intervals,
-    create_reazon_recognizer,
+    create_stt_recognizer,
     extract_original_audio,
+    get_stt_model,
     probe_media,
     recognize_segments,
     wav_to_float32_memmap,
@@ -65,6 +67,7 @@ def process_video(
     output_path: Path,
     *,
     precision: str = "int8",
+    stt_model: str = DEFAULT_STT_MODEL,
     translation_model: str = "mt1.5",
     status: StatusCallback | None = None,
     log: LogCallback | None = None,
@@ -74,6 +77,7 @@ def process_video(
     input_path = input_path.resolve()
     output_path = output_path.resolve()
     root = assets_dir()
+    selected_stt = get_stt_model(stt_model)
     ffmpeg = root / "ffmpeg" / "ffmpeg.exe"
     ffprobe = root / "ffmpeg" / "ffprobe.exe"
     vad_model = root / "vad" / "silero_vad.onnx"
@@ -93,6 +97,7 @@ def process_video(
             f"오디오 스트림 #{media.audio_stream_index} ({media.codec_name}), "
             f"영상 길이 {media.duration:.2f}초"
         )
+        log(f"일본어 STT: {selected_stt.label}")
 
     translator: BrowserTranslator | None = None
     audio: np.memmap | None = None
@@ -146,16 +151,22 @@ def process_video(
                     elapsed=time.perf_counter() - started,
                 )
 
-            # Model loading overlaps with Reazon recognition. The worker stays
+            # Model loading overlaps with STT recognition. The worker stays
             # private to this job and is always stopped in the finally block.
             translator = BrowserTranslator(translation_model)
             translator.start()
             if status:
-                status(0.36, "Reazon 일본어 인식 모델을 불러오고 있습니다.")
-            recognizer = create_reazon_recognizer(root, precision, _threads())
+                status(0.36, f"{selected_stt.status_name} 일본어 인식 모델을 불러오고 있습니다.")
+            recognizer = create_stt_recognizer(
+                root,
+                stt_model,
+                precision,
+                _threads(),
+            )
             results = recognize_segments(
                 recognizer,
                 segments,
+                model_name=selected_stt.status_name,
                 progress=(
                     (lambda ratio, message: status(0.38 + ratio * 0.27, message))
                     if status
