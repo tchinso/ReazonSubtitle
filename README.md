@@ -12,7 +12,7 @@
    - 앞 0.15초 / 뒤 0.35초 패딩
    - 강제 분할 문맥 overlap 0.40초
 3. VAD가 반환한 16 kHz 절대 샘플 위치를 유지하여 SRT 밀리초로 변환합니다. 강제 분할 overlap은 인식 문맥에만 쓰고 SRT 시작점에서는 제거합니다.
-4. ReazonSpeech 일본어 STT 후 Hy-MT2(기본) 또는 HY-MT1.5 로컬 ONNX 모델로 한국어 번역합니다.
+4. ReazonSpeech 일본어 STT 후 HY-MT1.5(기본) 또는 Hy-MT2(옵션) 로컬 ONNX 모델로 한국어 번역합니다.
 5. 결과를 영상 옆의 `*.ko.srt`로 저장합니다.
 
 ## 실행

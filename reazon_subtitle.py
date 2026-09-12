@@ -40,7 +40,7 @@ class ReazonSubtitleApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title("ReazonSubtitle")
-        self.geometry("820x610")
+        self.geometry("840x680")
         self.minsize(720, 540)
         self._events: queue.Queue[tuple] = queue.Queue()
         self._cancel_event = threading.Event()
@@ -51,7 +51,7 @@ class ReazonSubtitleApp(tk.Tk):
         self.input_var = tk.StringVar()
         self.output_var = tk.StringVar()
         self.precision_var = tk.StringVar(value="int8")
-        self.model_var = tk.StringVar(value=MODELS["mt2"].label)
+        self.model_var = tk.StringVar(value=MODELS["mt1.5"].label)
         self.status_var = tk.StringVar(value="영상을 선택해 주세요.")
         self.progress_var = tk.DoubleVar(value=0.0)
 
@@ -73,16 +73,20 @@ class ReazonSubtitleApp(tk.Tk):
     def _build_ui(self) -> None:
         outer = ttk.Frame(self, padding=20)
         outer.pack(fill=tk.BOTH, expand=True)
+        outer.columnconfigure(0, weight=1)
+        outer.rowconfigure(5, weight=1)
 
-        ttk.Label(outer, text="ReazonSubtitle", style="Title.TLabel").pack(anchor=tk.W)
+        ttk.Label(outer, text="ReazonSubtitle", style="Title.TLabel").grid(
+            row=0, column=0, sticky=tk.W
+        )
         ttk.Label(
             outer,
             text="영상의 원본 오디오 → FAST VAD → Reazon 일본어 인식 → HyTrans 한국어 SRT",
             style="Hint.TLabel",
-        ).pack(anchor=tk.W, pady=(3, 18))
+        ).grid(row=1, column=0, sticky=tk.W, pady=(3, 18))
 
         paths = ttk.LabelFrame(outer, text="파일", padding=12)
-        paths.pack(fill=tk.X)
+        paths.grid(row=2, column=0, sticky=tk.EW)
         paths.columnconfigure(1, weight=1)
 
         ttk.Label(paths, text="영상").grid(row=0, column=0, sticky=tk.W, padx=(0, 10))
@@ -99,7 +103,7 @@ class ReazonSubtitleApp(tk.Tk):
         self.browse_output.grid(row=1, column=2, padx=(8, 0), pady=(10, 0))
 
         options = ttk.LabelFrame(outer, text="처리 설정", padding=12)
-        options.pack(fill=tk.X, pady=(14, 0))
+        options.grid(row=3, column=0, sticky=tk.EW, pady=(14, 0))
         options.columnconfigure(1, weight=1)
         options.columnconfigure(3, weight=1)
 
@@ -133,7 +137,7 @@ class ReazonSubtitleApp(tk.Tk):
         ).grid(row=1, column=0, columnspan=4, sticky=tk.W, pady=(10, 0))
 
         progress_frame = ttk.Frame(outer)
-        progress_frame.pack(fill=tk.X, pady=(16, 0))
+        progress_frame.grid(row=4, column=0, sticky=tk.EW, pady=(16, 0))
         self.progress = ttk.Progressbar(
             progress_frame,
             variable=self.progress_var,
@@ -144,7 +148,7 @@ class ReazonSubtitleApp(tk.Tk):
         ttk.Label(progress_frame, textvariable=self.status_var).pack(anchor=tk.W, pady=(6, 0))
 
         log_frame = ttk.LabelFrame(outer, text="처리 기록", padding=8)
-        log_frame.pack(fill=tk.BOTH, expand=True, pady=(14, 0))
+        log_frame.grid(row=5, column=0, sticky=tk.NSEW, pady=(14, 0))
         self.log_text = tk.Text(
             log_frame,
             wrap=tk.WORD,
@@ -160,7 +164,7 @@ class ReazonSubtitleApp(tk.Tk):
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
         buttons = ttk.Frame(outer)
-        buttons.pack(fill=tk.X, pady=(14, 0))
+        buttons.grid(row=6, column=0, sticky=tk.EW, pady=(14, 0))
         self.open_folder_button = ttk.Button(
             buttons,
             text="출력 폴더 열기",
@@ -248,7 +252,7 @@ class ReazonSubtitleApp(tk.Tk):
             return
 
         label_to_key = {model.label: key for key, model in MODELS.items()}
-        model_key = label_to_key.get(self.model_var.get(), "mt2")
+        model_key = label_to_key.get(self.model_var.get(), "mt1.5")
         self._cancel_event.clear()
         self._set_running(True)
         self.open_folder_button.configure(state=tk.DISABLED)
@@ -383,7 +387,7 @@ def main() -> int:
         probe.destroy()
         recognizer = create_reazon_recognizer(assets_dir(), "int8", 1)
         del recognizer
-        translator = BrowserTranslator("mt2")
+        translator = BrowserTranslator()
         translator.validate_assets()
         # In a windowed PyInstaller build stdout/stderr are None. Constructing
         # the embedded server config here protects the frozen-only path that

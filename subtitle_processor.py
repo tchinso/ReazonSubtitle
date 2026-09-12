@@ -65,7 +65,7 @@ def process_video(
     output_path: Path,
     *,
     precision: str = "int8",
-    translation_model: str = "mt2",
+    translation_model: str = "mt1.5",
     status: StatusCallback | None = None,
     log: LogCallback | None = None,
     cancel_event=None,

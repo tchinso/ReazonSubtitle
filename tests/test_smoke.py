@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import os
 import subprocess
 import sys
@@ -14,10 +15,18 @@ import numpy as np
 from audio_pipeline import extract_original_audio, probe_media
 from resource_paths import assets_dir
 from subtitle_processor import process_video
-from translator_service import BrowserTranslator
+from translator_service import BrowserTranslator, MODELS
 
 
 class LocalAssetSmokeTests(unittest.TestCase):
+    def test_mt15_is_the_default_translation_model(self) -> None:
+        self.assertEqual(BrowserTranslator().model.key, "mt1.5")
+        self.assertEqual(
+            inspect.signature(process_video).parameters["translation_model"].default,
+            "mt1.5",
+        )
+        self.assertIn("mt2", MODELS)
+
     def test_uvicorn_config_is_safe_without_console_streams(self) -> None:
         translator = BrowserTranslator("mt2")
         with (

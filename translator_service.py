@@ -36,9 +36,28 @@ class TranslationModel:
 
 
 MODELS: dict[str, TranslationModel] = {
+    "mt1.5": TranslationModel(
+        key="mt1.5",
+        label="HY-MT1.5 1.8B (기본)",
+        model_id="onnx-community/HY-MT1.5-1.8B-ONNX",
+        revision="2f11819b25de08cecd344735cdfa5136ade41a67",
+        dtype="q4",
+        prompt=(
+            "Translate the following segment into {target}, without additional "
+            "explanation.\n\n{text}"
+        ),
+        files={
+            "config.json": 1_639,
+            "generation_config.json": 255,
+            "tokenizer.json": 8_672_322,
+            "tokenizer_config.json": 1_172,
+            "onnx/model_q4.onnx": 448_829,
+            "onnx/model_q4.onnx_data": 1_405_788_224,
+        },
+    ),
     "mt2": TranslationModel(
         key="mt2",
-        label="Hy-MT2 1.8B (권장)",
+        label="Hy-MT2 1.8B (옵션)",
         model_id="tchinso/Hy-MT2-1.8B-onnx-q4f16",
         revision="6b6a4f12235342ed00ac089159c7192ea40bf6e8",
         dtype="q4f16",
@@ -54,25 +73,6 @@ MODELS: dict[str, TranslationModel] = {
             "tokenizer.json": 9_527_287,
             "tokenizer_config.json": 166_491,
             "onnx/model_q4f16.onnx": 1_373_443_906,
-        },
-    ),
-    "mt1.5": TranslationModel(
-        key="mt1.5",
-        label="HY-MT1.5 1.8B (호환)",
-        model_id="onnx-community/HY-MT1.5-1.8B-ONNX",
-        revision="2f11819b25de08cecd344735cdfa5136ade41a67",
-        dtype="q4",
-        prompt=(
-            "Translate the following segment into {target}, without additional "
-            "explanation.\n\n{text}"
-        ),
-        files={
-            "config.json": 1_639,
-            "generation_config.json": 255,
-            "tokenizer.json": 8_672_322,
-            "tokenizer_config.json": 1_172,
-            "onnx/model_q4.onnx": 448_829,
-            "onnx/model_q4.onnx_data": 1_405_788_224,
         },
     ),
 }
@@ -112,8 +112,8 @@ def _reserve_port() -> int:
 class BrowserTranslator:
     """Run the local HYTrans ONNX model in a private headless Chromium worker."""
 
-    def __init__(self, model_key: str = "mt2") -> None:
-        self.model = MODELS.get(model_key, MODELS["mt2"])
+    def __init__(self, model_key: str = "mt1.5") -> None:
+        self.model = MODELS.get(model_key, MODELS["mt1.5"])
         self.port = _reserve_port()
         self._app = FastAPI(title="ReazonSubtitle HYTrans Worker")
         self._server: uvicorn.Server | None = None
